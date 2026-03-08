@@ -1,0 +1,247 @@
+---
+title: "Análisis Estadístico de Datos"
+subtitle: "Taller 1"
+author: "Grupo 3: Vanessa Ochoa, Juan Zamora y Nilson Amaya"
+date: "8 de marzo de 2026"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+\newpage
+
+
+
+# Introducción
+
+El presente informe corresponde al desarrollo del Taller 1 del curso de Análisis Estadístico de Datos, en el cual se realiza un ejercicio de exploración y análisis estadístico a partir de información meteorológica recopilada en diferentes regiones de Colombia.
+
+Para el desarrollo del taller se utiliza la base de datos ORI.csv, la cual contiene registros de variables climáticas medidas en distintos municipios del país.El objetivo de este taller es aplicar herramientas de análisis estadístico y visualización de datos utilizando el lenguaje R, con el fin de explorar el comportamiento de las variables meteorológicas, identificar patrones relevantes y evaluar posibles relaciones entre ellas.
+
+**Cargue de librerias necesarias**
+
+```{r, echo= TRUE, include=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(ggExtra)
+library(psych)
+library(dplyr)
+library(janitor)
+library(kableExtra)
+```
+# Parte 1. Fundamenos estadísticos
+
+## Pregunta 1.
+
+Importe la base de datos a R y determine el número de UE y de variables en la base de datos. ¿Cuántas filas y cuántas columnas tiene la tabla?, ¿Cuántos registros fueron medidos o recolectados a medio día (hora = 12:00)?
+
+```{r, echo=TRUE, include=TRUE, warning=FALSE}
+
+ORI <- read_delim(
+  "input/ORI.csv",
+  delim = ";",
+  locale = locale(encoding = "UTF-8")
+) %>% clean_names()
+
+str(ORI)
+
+```
+```{r, echo=TRUE, include=TRUE, warning=FALSE}
+dim(ORI) # 4543 Filas y 18 columnas
+
+```
+```{r, echo=TRUE, include=TRUE, warning=FALSE}
+ori_mediodia <- ORI %>%
+  filter(as.character(hora) == "12:00:00")
+
+dim(ori_mediodia)
+
+```
+## Pregunta 2. 
+
+Para los registros recolectados a medio día ¿cuál es el pronóstico climático más frecuente? ¿cuál es el menos frecuente?
+
+```{r, echo=TRUE, include=TRUE}
+
+freq_pro<- ori_mediodia %>%
+  count(pronostico)
+
+knitr::kable(freq_pro, caption = "Pronostico al medio dia")
+
+```
+
+## Pregunta 3.
+
+Clasifique las variables 1) Pronóstico, 2) Municipio, 3) Temperatura y 4) Velocidad del viento según su escala y clase.
+
+```{r, echo=TRUE, include=TRUE}
+
+clase_variables <- data.frame(
+  Variable = c("Pronostico", "Municipio", "Temperatura", "Velocidad_del_viento"),
+  Clase_R = sapply(ORI[, c("pronostico","municipio","temperatura","velocidad_del_viento")], class)
+)
+
+knitr::kable(clase_variables, caption = "Clase de las variables en R")
+
+```
+
+
+
+
+## Pregunta 4.
+
+Para los registros recolectados a medio día, describa de manera gráfica la temperatura y la velocidad del viento univariadamente a partir de un diagrama de caja. ¿Qué características observa los datos en términos de centro, localización y dispersión?.
+
+```{r, echo=TRUE, include=TRUE}
+
+ggplot(ori_mediodia, aes(y = temperatura)) +
+  geom_boxplot(fill = "pink") +
+  labs(
+    title = "Boxplot de la temperatura a medio dia",
+    y = "Temperatura"
+  ) +
+  theme_minimal()
+```
+
+## Pregunta 5.
+
+Para los registros recolectados a medio día, describa de manera numérica mediante la función summary() la temperatura y la velocidad del viento univariadamente. ¿Concuerda su descripción con los gráficos de boxplot previamente presentados?.
+
+
+```{r, echo=TRUE, include=TRUE}
+summary(ori_mediodia$temperatura)
+
+summary(ori_mediodia$velocidad_del_viento)
+```
+
+## Pregunta 6. 
+
+Para los registros recolectados a medio día, determine si existen o no observaciones atípicas univariadas para la variables Presión y Punto de Rocio usando el diagrama de caja de Tukey. ¿cuál variable presenta mayor número de atipicidades?
+
+```{r, echo=TRUE, include=TRUE}
+out_presion <- boxplot(ori_mediodia$presion, plot = FALSE)$out
+out_presion
+out_rocio <- boxplot(ori_mediodia$punto_de_rocio, plot = FALSE)$out
+out_rocio
+```
+
+## Pregunta 7. 
+
+Para los registros recolectados a medio día, describa de manera gráfica la asociación entre la temperatura y velocidad del viento a partir de un diagrama de dispersión entre las variables. Añada el histograma marginal de cada variable. ¿Parecen correlacionarse las dos variables? 
+
+```{r, echo=TRUE, include=TRUE}
+
+p <- ggplot(ori_mediodia,
+            aes(x = temperatura, y = velocidad_del_viento)) +
+  geom_point(color = "steelblue", alpha = 0.6) +
+  labs(
+    title = "Relación entre temperatura y velocidad del viento a medio día",
+    x = "Temperatura",
+    y = "Velocidad del viento"
+  ) +
+  theme_minimal()
+
+ggExtra::ggMarginal(p,
+                    type = "boxplot",
+                    fill = "lightblue")
+```
+
+## Pregunta 8. 
+
+Para los registros recolectados a medio día, describa de manera numérica la asociación entre temperatura y velocidad del viento a partir de la covarianza y el coeficiente de correlación de Pearson. ¿Parecen correlacionarse las dos variables? ¿en qué unidades se encuentran cada una de las dos medidas anteriormente mencionadas?
+
+```{r, echo=TRUE, include=TRUE}
+
+cov(ori_mediodia$temperatura,
+    ori_mediodia$velocidad_del_viento)
+
+cor(ori_mediodia$temperatura,
+    ori_mediodia$velocidad_del_viento)
+
+```
+
+## Pregunta 9.
+
+Para los registros recolectados a medio día, responda. Son estos datos ¿univariados, bivariados o multivariados?
+
+# Parte 2. Estimación de la densidad
+
+## Pregunta 10.
+
+Para los registros recolectados a medio día, elabore la estimación histograma de la densidad y la estimación kernel de la densidad para la variable Temperatura. ¿Podría afirmar que los datos provienen de una distribución normal?
+
+```{r, echo=TRUE, include=TRUE}
+
+ggplot(ori_mediodia, aes(x = temperatura)) +
+  geom_histogram(aes(y = ..density..),
+                 bins = 30,
+                 fill = "lightblue",
+                 color = "black") +
+  geom_density(color = "red", size = 1) +
+  stat_function(fun = dnorm,
+                args = list(
+                  mean = mean(ori_mediodia$temperatura, na.rm = TRUE),
+                  sd = sd(ori_mediodia$temperatura, na.rm = TRUE)
+                ),
+                color = "blue",
+                linetype = "dashed") +
+  labs(
+    title = "Distribucion de temperatura con comparacion normal",
+    x = "Temperatura",
+    y = "Densidad"
+  ) +
+  theme_minimal()
+```
+
+## Pregunta 11.
+
+Para los registros recolectados a medio día, elabore la estimación histograma de la densidad y la estimación kernel de la densidad para la variable Presión ¿Es la distribución estimada simétrica? explique.
+
+```{r}
+ggplot(ori_mediodia, aes(x = presion)) +
+  geom_histogram(aes(y = ..density..),
+                 bins = 30,
+                 fill = "lightblue",
+                 color = "black") +
+  geom_density(color = "red", size = 1) +
+  labs(
+    title = "Histograma y estimacion Kernel de la presion a medio dia",
+    x = "Presion",
+    y = "Densidad"
+  ) +
+  theme_minimal()
+```
+
+## Pregunta 12.
+
+Para los registros recolectados a medio día, elabore la estimación kernel de la densidad para la variable Velocidad del viento. Sobreponga en su gráfico la función de densidad normal con la media y desviación estándar observada en sus datos. ¿Se aproxima el modelo normal estimado a la estimación de la densidad encontrada?
+
+
+```{r}
+media_viento <- mean(ori_mediodia$velocidad_del_viento, na.rm = TRUE)
+sd_viento <- sd(ori_mediodia$velocidad_del_viento, na.rm = TRUE)
+
+# Gráfico
+ggplot(ori_mediodia, aes(x = velocidad_del_viento)) +
+  geom_density(color = "red", size = 1) + # linea roja kernel
+  stat_function(
+    fun = dnorm,
+    args = list(mean = media_viento, sd = sd_viento),
+    color = "blue",# normal
+    linetype = "dashed",
+    size = 1
+  ) +
+  labs(
+    title = "Estimacion kernel y densidad para la velocidad del viento",
+    x = "Velocidad del viento",
+    y = "Densidad"
+  ) +
+  theme_minimal()
+```
