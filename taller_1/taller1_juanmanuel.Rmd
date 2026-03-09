@@ -1,0 +1,207 @@
+---
+title: "Taller 1 - Análisis Estadístico de Datos"
+author: "Juan Manuel Zamora"
+date: "2026-03-09"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Librerías
+```{r librerias, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(ggExtra)
+library(psych)
+library(dplyr)
+```
+
+## Pregunta 1
+```{r pregunta1}
+datos <- read.csv("../ORI.csv", sep = ";")
+nrow(datos)
+ncol(datos)
+
+# Filtrar solo registros del mediodía
+datos_noon <- datos[datos$Hora == "12:00", ]
+nrow(datos_noon)
+```
+La base de datos tiene **4543 filas** y **18 columnas**. 
+El número de registros medidos a mediodía (12:00) es: [118].
+
+## Pregunta 2
+```{r pregunta2}
+tabla_pronostico <- table(datos_noon$Pronostico)
+sort(tabla_pronostico, decreasing = TRUE)
+```
+El pronóstico más frecuente al mediodía es **Parcialmente Nublado** 
+con 63 registros. El pronóstico menos frecuente es **Parcialmente 
+Nublado - Tormenta Ligera** con 2 registros.
+
+## Pregunta 3
+
+Las variables se clasifican de la siguiente manera:
+
+- **Pronóstico**: Cualitativa - Nominal. Es una categoría 
+descriptiva del clima sin orden jerárquico.
+
+- **Municipio**: Cualitativa - Nominal. Representa el nombre 
+del lugar de medición, sin orden ni valor numérico.
+
+- **Temperatura**: Cuantitativa - Intervalo. Es una medición 
+numérica continua, pero el cero (0°C) no representa 
+ausencia total de temperatura.
+
+- **Velocidad del viento**: Cuantitativa - Razón. Es numérica 
+y el cero (0 mph) sí representa ausencia total de viento.
+
+## Pregunta 4
+```{r pregunta4, fig.width=8, fig.height=5}
+
+
+# Boxplot de Temperatura
+
+ggplot(datos_noon, aes(y = Temperatura)) +
+  geom_boxplot(fill = "steelblue") +
+  labs(title = "Distribución de Temperatura al mediodía",
+       y = "Temperatura (°C)") +
+  scale_y_continuous(breaks = seq(20, 35, by = 0.5)) +
+  theme_minimal()
+
+# Boxplot de Velocidad del viento
+ggplot(datos_noon, aes(y = Velocidad_del_Viento)) +
+  geom_boxplot(fill = "coral") +
+  labs(title = "Distribución de Velocidad del viento al mediodía",
+       y = "Velocidad del viento (mph)") +
+  scale_y_continuous(breaks = seq(0, 5, by = 0.5)) +
+  theme_minimal()
+
+```
+
+La temperatura al mediodía presenta una mediana de aproximadamente 
+30°C con poca dispersión (caja estrecha entre 29°C y 31°C), 
+lo que indica temperaturas consistentes. Se observan valores 
+atípicos bajos entre 22°C y 25°C. La distribución presenta 
+ligera asimetría negativa.
+
+La velocidad del viento tiene una mediana de aproximadamente 
+1.7 mph con mayor dispersión relativa. La distribución es 
+más simétrica y no presenta valores atípicos evidentes, 
+indicando vientos suaves y moderadamente variables al mediodía.
+
+## Pregunta 5
+```{r pregunta5}
+summary(datos_noon$Temperatura)
+summary(datos_noon$Velocidad_del_Viento)
+```
+
+La temperatura presenta una mediana de **30.4°C** y una media de **29.75°C**, 
+con valores entre 22.4°C y 32.7°C. La velocidad del viento tiene mediana de 
+**1.7 mph** y media de **1.72 mph**, entre 0.4 y 3.7 mph. Estos valores 
+concuerdan con los boxplots: la temperatura muestra mayor dispersión y valores 
+atípicos bajos, mientras el viento es más simétrico y concentrado.
+
+## Pregunta 6
+```{r pregunta6}
+atipicos_presion <- boxplot(datos_noon$Presion, plot=FALSE)$out
+atipicos_rocio <- boxplot(datos_noon$Punto_de_Rocio, plot=FALSE)$out
+
+cat("Atípicos en Presión:", length(atipicos_presion), "\n")
+cat("Valores:", atipicos_presion, "\n\n")
+cat("Atípicos en Punto de Rocío:", length(atipicos_rocio), "\n")
+cat("Valores:", atipicos_rocio)
+```
+
+La variable **Presión** presenta **1 valor atípico** (1015.7 hPa), mientras 
+que **Punto de Rocío no presenta atípicos**. Por tanto, la Presión tiene mayor 
+número de atipicidades.
+
+## Pregunta 7
+```{r pregunta7, fig.width=7, fig.height=7}
+p <- ggplot(datos_noon, aes(x = Temperatura, y = Velocidad_del_Viento)) +
+  geom_point(color = "steelblue", alpha = 0.6) +
+  labs(title = "Temperatura vs Velocidad del viento al mediodía",
+       x = "Temperatura (°C)",
+       y = "Velocidad del viento (mph)") +
+  theme_minimal()
+
+ggMarginal(p, type = "histogram", fill = "steelblue")
+```
+
+El diagrama de dispersión no muestra un patrón claro entre las variables. 
+Los puntos están distribuidos de manera dispersa, sugiriendo que **no existe 
+una correlación evidente** entre temperatura y velocidad del viento al mediodía.
+
+## Pregunta 8
+```{r pregunta8}
+cov(datos_noon$Temperatura, datos_noon$Velocidad_del_Viento)
+cor(datos_noon$Temperatura, datos_noon$Velocidad_del_Viento)
+```
+
+La **covarianza** es aproximadamente **0.047** y se expresa en unidades 
+combinadas (°C × mph). Al ser positiva pero muy cercana a cero, indica una 
+relación casi inexistente. El **coeficiente de correlación de Pearson** es 
+**0.026** (adimensional, sin unidades), confirmando que no hay correlación 
+lineal entre temperatura y velocidad del viento.
+
+## Pregunta 9
+
+Los datos del mediodía son **multivariados**, ya que cada registro contiene 
+simultáneamente múltiples variables medidas (temperatura, viento, presión, 
+humedad, entre otras) sobre la misma unidad experimental.
+
+## Pregunta 10
+```{r pregunta10, fig.width=8, fig.height=5}
+ggplot(datos_noon, aes(x = Temperatura)) +
+  geom_histogram(aes(y = ..density..), fill = "steelblue", 
+                 color = "white", bins = 15) +
+  geom_density(color = "red", size = 1) +
+  labs(title = "Densidad de Temperatura al mediodía",
+       x = "Temperatura (°C)", y = "Densidad") +
+  theme_minimal()
+```
+
+La distribución de temperatura presenta una forma aproximadamente simétrica 
+con una ligera cola hacia la izquierda. **No se puede afirmar con certeza que 
+los datos provienen de una distribución normal**, dado que la curva kernel 
+muestra cierta irregularidad y la presencia de valores atípicos bajos aleja 
+la distribución de la normalidad perfecta.
+
+## Pregunta 11
+```{r pregunta11, fig.width=8, fig.height=5}
+ggplot(datos_noon, aes(x = Presion)) +
+  geom_histogram(aes(y = ..density..), fill = "coral",
+                 color = "white", bins = 15) +
+  geom_density(color = "darkred", size = 1) +
+  labs(title = "Densidad de Presión al mediodía",
+       x = "Presión (hPa)", y = "Densidad") +
+  theme_minimal()
+```
+
+La distribución de Presión **no es perfectamente simétrica**. Presenta una 
+ligera asimetría positiva (cola hacia la derecha), evidenciada por el valor 
+atípico de 1015.7 hPa que jala la distribución hacia valores altos.
+
+## Pregunta 12
+```{r pregunta12, fig.width=8, fig.height=5}
+media_viento <- mean(datos_noon$Velocidad_del_Viento)
+sd_viento <- sd(datos_noon$Velocidad_del_Viento)
+
+ggplot(datos_noon, aes(x = Velocidad_del_Viento)) +
+  geom_density(color = "coral", size = 1) +
+  stat_function(fun = dnorm, 
+                args = list(mean = media_viento, sd = sd_viento),
+                color = "steelblue", size = 1, linetype = "dashed") +
+  labs(title = "KDE vs Normal teórica - Velocidad del viento",
+       x = "Velocidad del viento (mph)", y = "Densidad",
+       caption = "Rojo: KDE observada | Azul: Normal teórica") +
+  theme_minimal()
+```
+
+El modelo normal teórico (azul) **no se aproxima bien** a la distribución 
+observada (rojo). La velocidad del viento presenta una distribución más 
+irregular y asimétrica que una normal, con concentración en valores bajos 
+y una cola hacia la derecha.
+
+
