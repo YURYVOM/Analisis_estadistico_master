@@ -1,0 +1,521 @@
+---
+title: "Análisis Estadístico de Datos — Taller 2"
+author: "Grupo 3: Vanessa Ochoa, Juan Zamora y Nilson Amaya"
+date: "08 de mayo de 2026"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    fig_caption: true
+    keep_tex: false
+    latex_engine: xelatex
+  html_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    theme: readable
+fontsize: 11pt
+geometry: margin=2.3cm
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  fig.width = 8,
+  fig.height = 5,
+  out.width = "85%"
+)
+```
+
+# Introducción
+
+El presente taller tiene como objetivo aplicar técnicas de análisis estadístico multivariado sobre un conjunto de datos proveniente de la U.S. Energy Information Administration (EIA), que reúne información energética de 111 países alrededor del mundo. Las variables analizadas abarcan aspectos de producción, consumo, importación y exportación de energías renovables y combustibles fósiles.
+
+A lo largo de este documento se desarrollan los puntos propuestos, empleando el lenguaje de programación R como herramienta principal de análisis. El objetivo central es identificar patrones y relaciones entre los países estudiados que permitan caracterizar su perfil energético y agruparlos según sus similitudes en términos de comportamiento energético.
+
+## Cargue de librerías necesarias
+
+```{r librerias}
+library(tidyverse)
+library(GGally)
+library(factoextra)
+library(FactoMineR)
+library(knitr)
+library(cluster)
+library(ggrepel)
+library(patchwork)
+```
+
+## Importación base de datos
+
+```{r carga-datos}
+data1 <- read.csv("datos_taller_02.csv",
+                  row.names = 1, sep = ";")
+names(data1)
+dim(data1)
+```
+
+Al revisar la base de datos se observa que esta cuenta con 111 países como unidades de estudio y 57 variables energéticas. Estas variables se encuentran organizadas en dos grandes grupos: el primero relacionado con combustibles fósiles, que incluye información sobre consumo, producción, exportación, importación y reservas de petróleo crudo, gasolina, diésel, queroseno, GLP y fuel oil, expresadas principalmente en miles de barriles por día (TBPD); y el segundo relacionado con electricidad, que contiene variables de capacidad instalada y generación neta clasificadas por fuente de energía, tanto renovables (solar, eólica, hidroeléctrica, geotérmica, biomasa y mareomotriz) como no renovables (combustibles fósiles y nuclear), expresadas en megakilovatios (MK) y billones de kilovatios-hora (BKWH).
+
+
+# Parte 1. Normal multivariada
+
+## Pregunta 1.
+
+Encuentre la estimación del vector de medias y la matriz de varianzas y covarianzas para 5 variables de su interés del conjunto de datos.
+
+```{r p1-seleccion}
+vars <- c("Bunker_fuel_consumption_TBPD",
+          "Crude_oil_including_lease_condensate_exports_TBPD",
+          "Petroleum_and_other_liquids_CO2_emissions_MMTCD",
+          "Renewable_electricity_net_generation_BKWH",
+          "Solar_electricity_installed_capacity_MK")
+
+data_sel <- data1[, vars]
+colnames(data_sel) <- c("Bunker_fuel", "Exp_petroleo_crudo",
+                        "Emis_CO2_petroleo", "Gen_elec_renovable",
+                        "Cap_solar_instalada")
+```
+
+```{r p1-medias}
+# Vector de medias
+vector_medias <- colMeans(data_sel, na.rm = TRUE)
+kable(round(as.data.frame(vector_medias), 2), caption = "Vector de medias")
+```
+
+```{r p1-cov}
+# Matriz de covarianzas
+matriz_cov <- cov(data_sel, use = "complete.obs")
+kable(round(matriz_cov, 2), caption = "Matriz de varianzas y covarianzas")
+```
+
+
+# Parte 2. ACP
+
+## Pregunta 2.
+
+Realice un análisis descriptivo univariado y bivariado del conjunto de datos. Considere nuevamente las mismas 5 variables de su interés para este punto.
+
+> *Ayuda: La función `ggpairs()` puede serle de utilidad para ver las asociaciones dos a dos entre las variables de una manera sencilla.*
+
+```{r p2-univariado}
+# Análisis univariado
+summary(data_sel)
+```
+
+El análisis descriptivo revela que variables como las exportaciones de petróleo crudo y las emisiones de CO2 presentan medias muy superiores a sus medianas, lo que indica distribuciones asimétricas donde unos pocos países concentran valores extremadamente altos. La capacidad solar instalada es la variable con menor variabilidad, reflejando que la energía solar aún tiene un desarrollo limitado en la mayoría de los países analizados.
+
+```{r p2-bivariado, fig.width=9, fig.height=7}
+# Análisis bivariado
+ggpairs(data_sel,
+        title = "Analisis bivariado de variables energeticas")
+```
+
+El análisis bivariado muestra que las emisiones de CO2 presentan correlaciones positivas y significativas con la generación eléctrica renovable (0.769) y la capacidad solar instalada (0.709), lo que indica que los países con mayor actividad energética en general tienden a desarrollar también más energías renovables.
+
+El bunker fuel muestra correlaciones moderadas con las demás variables. Por su parte, las exportaciones de petróleo crudo no presentan correlaciones significativas con la generación renovable ni con la capacidad solar. En los diagramas de dispersión se aprecia que todas las variables presentan distribuciones muy asimétricas, con la mayoría de países concentrados en valores bajos y unos pocos outliers con valores extremos.
+
+## Pregunta 3.
+
+El conjunto de datos incluye 57 variables, analizarlas de forma individual podría representar un gasto computacional y de tiempo bastante agotador; por lo cuál una técnica de reducción de dimensionalidad sería ideal. Ejecute un ACP sobre estos datos, compare la contribución de las variables sobre el primer plano factorial de un ACP normado (escalado) y uno sin normalizar (sin escalar).
+
+```{r p3-acp}
+acp_sin <- prcomp(data1, rank. = 2)
+acp_con <- prcomp(data1, scale. = TRUE, rank. = 2)
+
+# % varianza explicada por los 2 primeros CPs
+sin_esc <- summary(acp_sin)$importance[2, 1:2]
+con_esc <- summary(acp_con)$importance[2, 1:2]
+rbind(sin_escala = round(sin_esc, 3),
+      con_escala = round(con_esc, 3))
+```
+
+Al comparar la varianza explicada por los dos primeros componentes principales, se observa que el ACP sin escalar concentra el 82.9% de la varianza en el primer componente, lo que indica que una o pocas variables con magnitudes muy grandes están dominando el análisis. En contraste, el ACP escalado distribuye mejor la información, explicando un 62% en el primer componente y un 7.7% en el segundo. Esto confirma que el ACP normado es más adecuado para este conjunto de datos, ya que al estandarizar las variables permite que todas contribuyan de manera equitativa al análisis, independientemente de sus unidades y escalas originales.
+
+```{r p3-cargas-escalado}
+kable(round(acp_con$rotation, 3), caption = "Cargas ACP escalado")
+```
+
+El PC1 recibe contribuciones similares de casi todas las variables (entre 0.10 y 0.17), representando un factor general de actividad energética del país. El PC2 diferencia entre países con perfil de combustibles fósiles, con cargas positivas en producción de gas natural (0.308) y reservas de petróleo (0.220), frente a países con mayor desarrollo renovable, con cargas negativas en generación hidroeléctrica (-0.195) y capacidad solar (-0.192).
+
+```{r p3-cargas-sinescalar}
+kable(round(acp_sin$rotation, 3), caption = "Cargas ACP sin escalar")
+```
+
+En el ACP sin escalar, el PC1 está dominado por variables de producción y consumo de petróleo refinado (cargas entre 0.37 y 0.45), mientras que las variables eléctricas tienen cargas cercanas a cero, lo que evidencia que las variables con mayores magnitudes absorben casi toda la varianza. El PC2 contrasta la producción de petróleo crudo (0.539) frente a las importaciones (-0.243) y el consumo de productos refinados (-0.199). Esto confirma que sin escalar, el análisis está sesgado por las unidades de medida y no refleja adecuadamente la estructura real de los datos.
+
+## Pregunta 4.
+
+Una vez calculado el PCA normado, ¿qué número de componentes principales deberíamos seleccionar? ¿Bajo qué criterio seleccionó este número de componentes?
+
+```{r p4-importancia}
+acp_con <- prcomp(data1, scale. = TRUE)
+round(summary(acp_con)$importance, 3)
+```
+
+```{r p4-screeplot}
+screeplot(acp_con, col = "blue", pch = 16,
+          type = "lines", cex = 1.5, lwd = 2,
+          main = "Screeplot")
+```
+
+Con base en el screeplot se observa una caída drástica en la varianza explicada a partir del segundo componente, estabilizándose desde el tercero. Aplicando conjuntamente el criterio del codo y la varianza acumulada, se seleccionan 3 componentes principales, los cuales explican el 76.7% de la variabilidad total de los datos, siendo un número suficiente para representar la estructura del conjunto sin perder demasiada información.
+
+## Pregunta 5.
+
+Analice la representación de las variables originales sobre las dos primeras componentes en el primer plano factorial. ¿Qué conclusiones podemos sacar de este análisis?
+
+```{r p5-plano12, fig.width=8, fig.height=6}
+acp_con2 <- acp_con
+rownames(acp_con2$rotation) <- paste0("V", 1:57)
+
+fviz_pca_var(acp_con2, axes = c(1, 2),
+             col.var = "contrib",
+             gradient.cols = c("steelblue", "gold", "tomato"),
+             select.var = list(contrib = 30),
+             repel = TRUE)
+```
+
+En el plano factorial PC1-PC2 se observa que la gran mayoría de variables apuntan hacia la derecha sobre el PC1, lo que indica que este componente representa un factor general de actividad energética: países con mayor producción, consumo y generación de energía tienen valores altos en PC1. La variable V43 es la única que apunta en dirección opuesta, sugiriendo que se comporta de manera contraria al resto. En el PC2 se aprecia cierta diferenciación entre variables que apuntan hacia arriba (V17, V15, V9) y las que apuntan hacia abajo (V46, V50, V56), lo que podría reflejar un contraste entre tipos de energía. Las variables con mayor contribución (en rojo) son las que más determinan la construcción del primer plano factorial.
+
+```{r p5-plano23, fig.width=8, fig.height=6}
+fviz_pca_var(acp_con2, axes = c(2, 3),
+             col.var = "contrib",
+             gradient.cols = c("steelblue", "gold", "tomato"),
+             select.var = list(contrib = 30),
+             repel = TRUE)
+```
+
+En el plano factorial PC2-PC3 se observa una mayor dispersión de las variables en todas las direcciones, lo que indica que estos componentes capturan patrones más específicos que el PC1. En el PC2 se distinguen variables que apuntan hacia la derecha (V17, V16, V15, V9) frente a las que apuntan hacia la izquierda (V52, V53, V42), sugiriendo un contraste entre dos grupos de variables energéticas. En el PC3 se diferencian variables con carga positiva (V40, V41, V37) frente a las de carga negativa (V3, V6, V5), las cuales tienen además la mayor contribución al plano (en rojo y naranja). A diferencia del plano PC1-PC2, aquí las variables se distribuyen más equilibradamente, lo que permite identificar relaciones más específicas entre distintos tipos de energía.
+
+## Pregunta 6.
+
+Ahora examine con detenimiento el mapa de individuos sobre los planos factoriales que conforman las componentes (1,2) y (2,3). ¿Qué conclusiones puede sacar según la cercanía de algunas UE?
+
+```{r p6-ind12, fig.width=9, fig.height=7}
+fviz_pca_ind(acp_con, axes = c(1, 2),
+             col.ind = data1$Petroleum_and_other_liquids_consumption_TBPD,
+             gradient.cols = c("tomato", "gold", "steelblue"),
+             repel = TRUE, label = "all",
+             labelsize = 2)
+```
+
+El mapa de individuos sobre el plano PC1-PC2 muestra que la mayoría de los 111 países se concentran cerca del origen, indicando perfiles energéticos similares y moderados. Sin embargo, destacan claramente dos países atípicos: Estados Unidos y China, que se ubican muy alejados del resto sobre el PC1, reflejando su altísimo consumo de petróleo y actividad energética en general. China además se separa ligeramente en el PC2. El color azul de estos países confirma que son los de mayor consumo, mientras que la gran masa de países en rojo presenta niveles de consumo relativamente bajos y homogéneos entre sí.
+
+```{r p6-ind23, fig.width=9, fig.height=7}
+fviz_pca_ind(acp_con, axes = c(2, 3),
+             col.ind = data1$Petroleum_and_other_liquids_consumption_TBPD,
+             gradient.cols = c("tomato", "gold", "steelblue"),
+             repel = TRUE, label = "all",
+             labelsize = 2)
+```
+
+En el plano PC2-PC3 se observa una mayor separación entre países. China se destaca hacia la izquierda, mientras que Arabia Saudita y Rusia aparecen en el cuadrante inferior derecho, lo que refleja su condición de grandes productores de petróleo. Los países europeos tienden a agruparse en la parte superior, sugiriendo perfiles energéticos similares entre ellos. Estados Unidos nuevamente aparece alejado del resto.
+
+## Pregunta 7.
+
+Como hemos observado en clase, el ACP es una técnica bastante sensible a datos atípicos, ejecute nuevamente el ACP retirando del conjunto de datos a Estados Unidos, China, Arabia Saudi y Rusia. ¿En qué cambia el ACP al excluir estos países? ¿Se perciben clusters de países con mayor claridad? Calcule únicamente el ACP normado.
+
+```{r p7-acp-sin-atipicos}
+data2 <- data1 %>% filter(!rownames(data1) %in% c("UnitedStates", "China",
+                                                  "SaudiArabia", "Russia"))
+acp_con_sin <- prcomp(data2, scale. = TRUE)
+```
+
+```{r p7-ind12, fig.width=9, fig.height=7}
+fviz_pca_ind(acp_con_sin, axes = c(1, 2),
+             col.ind = data2$Petroleum_and_other_liquids_consumption_TBPD,
+             gradient.cols = c("tomato", "gold", "steelblue"),
+             repel = TRUE, label = "all",
+             labelsize = 2)
+```
+
+Al retirar los cuatro países atípicos, el ACP cambia notablemente. El PC1 pasa de explicar el 62% a un 48.9%, y el PC2 sube al 10.2%. En el gráfico se perciben con mayor claridad algunos grupos: Japón, India, Canadá y Brasil se separan del resto hacia la derecha con consumos moderados-altos, mientras que países como Francia, Italia y Corea del Sur se agrupan en la parte superior. Los países Kuwait, Irán y Venezuela aparecen en el cuadrante inferior derecho. La gran mayoría de países africanos y latinoamericanos siguen concentrados cerca del origen con consumos bajos.
+
+```{r p7-ind23, fig.width=9, fig.height=7}
+fviz_pca_ind(acp_con_sin, axes = c(2, 3),
+             col.ind = data2$Petroleum_and_other_liquids_consumption_TBPD,
+             gradient.cols = c("tomato", "gold", "steelblue"),
+             repel = TRUE, label = "all",
+             labelsize = 2)
+```
+
+En el plano PC2-PC3 se observan grupos más definidos. Japón se separa claramente hacia arriba, mientras que Canadá y Brasil aparecen en el cuadrante inferior izquierdo, y Francia en el inferior derecho, sugiriendo perfiles energéticos particulares en cada caso. Los países como Irán, Emiratos Árabes, Irak y Venezuela, se agrupan hacia la izquierda, reflejando su perfil productor de petróleo. En general, al retirar los países atípicos la dispersión mejora y algunos grupos son más identificables, aunque dado el alto número de países (107) el gráfico sigue siendo denso y difícil de interpretar en su totalidad.
+
+
+# Parte 3. Clustering
+
+A partir de este punto el análisis se realiza sin los cuatro países atípicos identificados en la pregunta 7. El conjunto de datos se reconstruye con indexación directa para conservar los nombres de país como `rownames`, condición necesaria para mantener la trazabilidad de las observaciones en el clustering.
+
+```{r p3-setup}
+paises_atipicos <- c("UnitedStates", "China", "SaudiArabia", "Russia")
+data2 <- data1[!rownames(data1) %in% paises_atipicos, ]
+
+# Estandarización: el clustering por distancias requiere escalas comparables
+data2_esc <- scale(data2)
+
+eig_clean <- get_eigenvalue(acp_con_sin)
+paleta <- c("#E63946", "#F4A261", "#457B9D", "#2A9D8F")
+```
+
+## Pregunta 8.
+
+De acuerdo a lo aprendido en la clase de agrupamiento, utilice el primer plano factorial para determinar de manera aproximada el número de grupos en el análisis. ¿Cuántos clusters espera que existan en el conjunto de datos?
+
+Para anticipar el número de grupos se examinó el primer plano factorial del ACP sin atípicos. Dado que las 107 etiquetas de país saturan el gráfico, se etiquetaron únicamente los 25 países más alejados del origen, los cuales estructuran visualmente la dispersión del conjunto. El color de cada punto corresponde al cos² en el plano y representa qué tan bien queda representado cada país en estos dos componentes; los tonos claros indican alta representación y los tonos oscuros indican que la variabilidad principal del país se concentra en componentes posteriores.
+
+```{r p8-mapa, fig.width=10, fig.height=7}
+coords <- as.data.frame(acp_con_sin$x[, 1:2])
+colnames(coords) <- c("PC1", "PC2")
+coords$pais <- rownames(coords)
+coords$cos2 <- rowSums(get_pca_ind(acp_con_sin)$cos2[, 1:2])
+coords$dist_plano <- sqrt(coords$PC1^2 + coords$PC2^2)
+
+top_paises <- coords %>%
+  arrange(desc(dist_plano)) %>%
+  head(25) %>%
+  pull(pais)
+
+zonas <- data.frame(
+  x = c(10, 2, -2.5, 22),
+  y = c(7, -7.5, 3, 4),
+  label = c("Economías\nindustriales",
+            "Productores de\nhidrocarburos",
+            "Mayor masa\n(menor escala)",
+            "Gigantes\nasiáticos"),
+  color = c("#E63946", "#E76F51", "#457B9D", "#2A9D8F")
+)
+
+ggplot(coords, aes(PC1, PC2)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey60", alpha = 0.5) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey60", alpha = 0.5) +
+  geom_point(aes(color = cos2), size = 2.8, alpha = 0.85) +
+  geom_text_repel(
+    data = filter(coords, pais %in% top_paises),
+    aes(label = pais),
+    size = 3, segment.color = "grey50", max.overlaps = Inf,
+    bg.color = "white", bg.r = 0.15
+  ) +
+  geom_label(
+    data = zonas,
+    aes(x = x, y = y, label = label),
+    color = zonas$color, fontface = "bold", size = 3.3,
+    fill = "white", alpha = 0.7, label.size = 0.4,
+    inherit.aes = FALSE
+  ) +
+  scale_color_viridis_c(name = expression(cos^2)) +
+  labs(
+    title = "Mapa de individuos en el primer plano factorial (sin atípicos)",
+    subtitle = "Etiquetas en los 25 países más alejados del origen",
+    x = paste0("PC1 (", round(eig_clean[1, 2], 1), "%)"),
+    y = paste0("PC2 (", round(eig_clean[2, 2], 1), "%)")
+  ) +
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold"))
+```
+
+La disposición espacial sugiere cuatro agrupaciones diferenciadas. Una nube grande se concentra cerca del origen y reúne a la mayoría de países africanos, latinoamericanos y de Asia central, con perfiles energéticos pequeños y poco diferenciados. En la parte superior derecha se identifica un grupo de economías industriales (Francia, Italia, Alemania, España, Reino Unido y Corea del Sur). En la parte inferior se agrupan los productores de hidrocarburos (Iraq, Kuwait, Irán, Emiratos Árabes, Venezuela y México). Finalmente, India y Japón quedan aislados a la derecha sobre PC1 por sus perfiles energéticos extremos. La inspección visual sugiere entonces aproximadamente cuatro grupos.
+
+## Pregunta 9.
+
+Mediante el método de reducción de varianza explicada, determine un número fijo de clusters para su análisis. No tiene que ser el mismo número que el elegido por su compañero, recuerde que ninguno conoce las etiquetas reales de los grupos de los países.
+
+Para determinar el número de clusters se aplicaron dos criterios complementarios. El método del codo evalúa la suma de cuadrados intra-cluster (WCSS) en función de k: a mayor número de grupos, menor cohesión interna, y el "codo" identifica el punto donde añadir un cluster adicional deja de aportar reducción significativa. El coeficiente de silueta mide qué tan bien encaja cada observación en su propio cluster respecto al cluster vecino más cercano, premiando soluciones donde los grupos están bien separados.
+
+```{r p9-codo-silueta, fig.width=11, fig.height=4.5}
+set.seed(123)
+p_codo <- fviz_nbclust(data2_esc, kmeans, method = "wss", k.max = 10) +
+  geom_vline(xintercept = 4, linetype = 2, color = "#E63946", linewidth = 0.8) +
+  annotate("text", x = 4.4, y = 5500, label = "k = 4",
+           color = "#E63946", fontface = "bold", hjust = 0) +
+  labs(title = "Método del codo",
+       x = "Número de clusters (k)", y = "WCSS") +
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold"))
+
+set.seed(123)
+p_sil <- fviz_nbclust(data2_esc, kmeans, method = "silhouette", k.max = 10) +
+  geom_vline(xintercept = 4, linetype = 2, color = "#E63946", linewidth = 0.8) +
+  geom_vline(xintercept = 2, linetype = 3, color = "grey50", alpha = 0.7) +
+  annotate("text", x = 2.1, y = 0.3, label = "óptimo cohesión\n(no informativo)",
+           color = "grey40", size = 2.8, hjust = 0) +
+  annotate("text", x = 4.4, y = 0.6, label = "k = 4",
+           color = "#E63946", fontface = "bold", hjust = 0) +
+  labs(title = "Coeficiente de silueta",
+       x = "Número de clusters (k)", y = "Silueta promedio") +
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold"))
+
+p_codo + p_sil + plot_annotation(
+  title = "Selección del número de clusters",
+  theme = theme(plot.title = element_text(face = "bold", size = 13))
+)
+```
+
+Los criterios apuntan a soluciones distintas. La silueta favorece k=2 con un valor cercano a 0.70, pero esa partición agruparía más del 95% de los países en un único cluster, separando solo unos pocos casos extremos; aunque óptima en cohesión, resulta poco útil para caracterizar perfiles diferenciados. El codo no muestra un quiebre tajante, pero exhibe la desaceleración más visible entre k=3 y k=4. Privilegiando la interpretabilidad sobre la cohesión pura, se selecciona **k=4**, decisión que permite distinguir cuatro perfiles energéticos sustantivamente diferentes y que se valida empíricamente en la pregunta siguiente.
+
+## Pregunta 10.
+
+Determine mediante k-means y aglomeración jerárquica (usando enlace promedio) la clasificación en grupos para los países de estudio. Considere todas las variables de estudio. ¿Son diferentes los resultados de los dos análisis cluster?
+
+Se aplicaron ambos métodos sobre los datos escalados con k=4. K-means se ejecutó con `nstart = 50` para reducir la dependencia de la inicialización aleatoria.
+
+```{r p10-modelos}
+set.seed(123)
+km <- kmeans(data2_esc, centers = 4, nstart = 50)
+
+d  <- dist(data2_esc, method = "euclidean")
+hc <- hclust(d, method = "average")
+clust_hc <- cutree(hc, k = 4)
+```
+
+El dendrograma del método jerárquico muestra cómo se construyen las fusiones a medida que aumenta la altura del árbol. Cortando en k=4, las ramas resultantes evidencian que el enlace promedio concentra a la gran mayoría de países en una rama dominante mientras separa solo a unos pocos casos extremos en ramas pequeñas, comportamiento que anticipa una solución muy desbalanceada.
+
+```{r p10-dendrograma, fig.width=11, fig.height=6}
+fviz_dend(hc, k = 4, cex = 0.45,
+          k_colors = paleta,
+          rect = TRUE, rect_fill = TRUE,
+          main = "Dendrograma — enlace promedio (corte k=4)") +
+  theme(plot.title = element_text(face = "bold", size = 11))
+```
+
+Para visualizar y comparar las dos clasificaciones sobre el primer plano factorial, se etiquetan únicamente los países más representativos de cada grupo: hasta los 4 países más cercanos al centroide en clusters grandes y todos los países en clusters pequeños.
+
+```{r p10-preparar-mapas}
+df_clust <- data.frame(
+  PC1  = acp_con_sin$x[, 1],
+  PC2  = acp_con_sin$x[, 2],
+  pais = rownames(data2),
+  km   = factor(km$cluster),
+  hc   = factor(clust_hc)
+)
+
+df_clust$dist_km <- sapply(seq_len(nrow(data2_esc)), function(i) {
+  sqrt(sum((data2_esc[i, ] - km$centers[km$cluster[i], ])^2))
+})
+
+centroides_hc <- t(sapply(1:4, function(k)
+  colMeans(data2_esc[clust_hc == k, , drop = FALSE])))
+df_clust$dist_hc <- sapply(seq_len(nrow(data2_esc)), function(i) {
+  sqrt(sum((data2_esc[i, ] - centroides_hc[clust_hc[i], ])^2))
+})
+
+etiq_km <- df_clust %>% group_by(km) %>%
+  slice_min(dist_km, n = 4, with_ties = FALSE) %>% ungroup()
+etiq_hc <- df_clust %>% group_by(hc) %>%
+  slice_min(dist_hc, n = 4, with_ties = FALSE) %>% ungroup()
+
+tam_km <- table(km$cluster)
+nombres_km <- paste0("Cluster ", names(tam_km), " (", tam_km, ")")
+
+tam_hc <- table(clust_hc)
+nombres_hc <- paste0("Cluster ", names(tam_hc), " (", tam_hc, ")")
+
+ejes_lab <- c(paste0("PC1 (", round(eig_clean[1, 2], 1), "%)"),
+              paste0("PC2 (", round(eig_clean[2, 2], 1), "%)"))
+```
+
+```{r p10-mapa-km, fig.width=10, fig.height=7}
+ggplot(df_clust, aes(PC1, PC2, color = km)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey60", alpha = 0.5) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey60", alpha = 0.5) +
+  geom_point(size = 2.5, alpha = 0.8) +
+  geom_text_repel(data = etiq_km, aes(label = pais),
+                  size = 3, color = "black", segment.color = "grey50",
+                  max.overlaps = Inf, show.legend = FALSE,
+                  bg.color = "white", bg.r = 0.15) +
+  scale_color_manual(values = paleta, name = "Cluster", labels = nombres_km) +
+  labs(
+    title = "Clasificación K-means (k=4) sobre el primer plano factorial",
+    subtitle = "Etiquetas: hasta 4 países más cercanos al centroide por cluster",
+    x = ejes_lab[1], y = ejes_lab[2]
+  ) +
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "right")
+```
+
+```{r p10-mapa-hc, fig.width=10, fig.height=7}
+ggplot(df_clust, aes(PC1, PC2, color = hc)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey60", alpha = 0.5) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey60", alpha = 0.5) +
+  geom_point(size = 2.5, alpha = 0.8) +
+  geom_text_repel(data = etiq_hc, aes(label = pais),
+                  size = 3, color = "black", segment.color = "grey50",
+                  max.overlaps = Inf, show.legend = FALSE,
+                  bg.color = "white", bg.r = 0.15) +
+  scale_color_manual(values = paleta, name = "Cluster", labels = nombres_hc) +
+  labs(
+    title = "Clasificación jerárquica (enlace promedio, k=4)",
+    subtitle = "El cluster mayoritario absorbe 101 de los 107 países",
+    x = ejes_lab[1], y = ejes_lab[2]
+  ) +
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "right")
+```
+
+```{r p10-tabla-cruzada}
+tabla_cruzada <- table(K_means = km$cluster, Jerarquico = clust_hc)
+kable(tabla_cruzada,
+      caption = "Asignaciones cruzadas: filas = clusters K-means, columnas = clusters jerárquico (average)")
+```
+
+Los resultados obtenidos por ambos métodos son notablemente distintos. K-means produjo una partición con tamaños 87, 10, 8 y 2, distribuyendo a los países en cuatro grupos diferenciados de tamaño razonable. La aglomeración jerárquica con enlace promedio, en cambio, agrupó a 101 de los 107 países en un único cluster mayoritario y aisló a los pocos países más extremos en clusters minoritarios de apenas dos elementos.
+
+Esta diferencia se explica por la lógica de cada método. K-means minimiza la varianza intra-cluster repartiendo las observaciones en regiones del espacio donde los puntos están más cerca de su centroide que de cualquier otro, comportamiento que tiende a producir grupos balanceados. El enlace promedio en la aglomeración jerárquica fusiona en cada paso los grupos cuya distancia promedio entre puntos es mínima, lo que en presencia de alta variabilidad provoca que la mayoría de observaciones se incorpore tempranamente a una rama dominante y que solo los casos más extremos queden en ramas separadas.
+
+Para el objetivo de caracterizar perfiles energéticos resulta más útil la solución de k-means, que permite distinguir grupos de tamaño comparable e interpretables. Esta es la asignación que se utiliza en la pregunta 11.
+
+## Pregunta 11.
+
+Grafique mediante boxplot la distribución de las 5 variables seleccionadas en el punto 2 diferenciando por los grupos encontrados mediante k-means.
+
+Las distribuciones se graficaron en escala logarítmica en el eje vertical, dado que las variables presentan distribuciones muy asimétricas y la escala lineal comprimiría los boxplots de los clusters pequeños contra el eje, dificultando la lectura.
+
+```{r p11-boxplots, fig.width=11, fig.height=7}
+data_sel_c <- data2[, vars]
+colnames(data_sel_c) <- c("Bunker_fuel", "Exp_petroleo_crudo",
+                          "Emis_CO2_petroleo", "Gen_elec_renovable",
+                          "Cap_solar_instalada")
+
+labels_cluster <- paste0("Cluster ", names(tam_km), "\n(n=", tam_km, ")")
+
+df_box <- data_sel_c %>%
+  mutate(cluster = factor(km$cluster,
+                          levels = names(tam_km),
+                          labels = labels_cluster),
+         pais = rownames(data2)) %>%
+  pivot_longer(cols = -c(cluster, pais),
+               names_to = "variable", values_to = "valor")
+
+ggplot(df_box, aes(x = cluster, y = valor + 1, fill = cluster)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA, width = 0.6) +
+  geom_jitter(width = 0.18, size = 0.9, alpha = 0.45, color = "grey25") +
+  facet_wrap(~ variable, scales = "free_y", ncol = 3) +
+  scale_y_log10() +
+  scale_fill_manual(values = paleta) +
+  labs(title = "Distribución de las 5 variables por cluster k-means",
+       subtitle = "Escala logarítmica en el eje vertical",
+       x = NULL, y = "Valor (escala log10, valor+1)") +
+  theme_bw() +
+  theme(legend.position = "none",
+        plot.title = element_text(face = "bold"),
+        axis.text.x = element_text(size = 8))
+```
+
+```{r p11-listado, results='asis'}
+paises_por_cluster <- split(rownames(data2), km$cluster)
+for (i in seq_along(paises_por_cluster)) {
+  cat("\n**Cluster ", i, " (", length(paises_por_cluster[[i]]), " países):** ",
+      paste(paises_por_cluster[[i]], collapse = ", "), "\n\n", sep = "")
+}
+```
+
+Los boxplots muestran una separación nítida entre clusters en las cinco variables. El cluster mayoritario (87 países) presenta los valores más bajos en todas las variables y agrupa a las economías energéticamente pequeñas o medianas. El cluster de economías industriales (8 países: Brasil, Canadá, Francia, Alemania, Italia, Corea del Sur, España y Reino Unido) registra consumos altos de bunker fuel, emisiones moderadas-altas de CO2 y desarrollo apreciable en capacidad solar y generación renovable. El cluster de productores de hidrocarburos (10 países: Indonesia, Irán, Iraq, Kuwait, México, Países Bajos, Singapur, Tailandia, Emiratos Árabes y Venezuela) destaca por la mediana más alta en exportaciones de petróleo crudo y por emisiones de CO2 comparables al cluster industrial, pero con desarrollo renovable y solar mucho menor. El cluster formado por India y Japón concentra los niveles más altos en emisiones, generación renovable y capacidad solar instalada, combinando magnitudes propias del cluster industrial con escalas que ningún otro país alcanza; debe tenerse en cuenta que un cluster con dos observaciones limita la inferencia estadística sobre su distribución.
+
+La separación consistente y nítida entre los grupos en las cinco variables valida que la partición de k-means captura diferencias reales en el perfil energético de los países y no constituye un artefacto del método de agrupamiento.
